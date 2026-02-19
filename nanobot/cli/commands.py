@@ -279,6 +279,241 @@ This file stores important information that should persist across sessions.
     skills_dir.mkdir(exist_ok=True)
 
 
+# ============================================================================
+# Soul — interactive persona configurator
+# ============================================================================
+
+
+def _ask(prompt: str, default: str = "") -> str:
+    """Prompt user for input with an optional default value."""
+    if default:
+        result = typer.prompt(prompt, default=default)
+    else:
+        result = typer.prompt(prompt, default="", show_default=False)
+    return result.strip()
+
+
+def _choose(prompt: str, choices: list[str], allow_multi: bool = False) -> list[str]:
+    """Let user pick from numbered choices. Returns selected items."""
+    console.print(f"\n[bold]{prompt}[/bold]")
+    for i, choice in enumerate(choices, 1):
+        console.print(f"  [cyan]{i}[/cyan]. {choice}")
+
+    hint = "comma-separated numbers" if allow_multi else "number"
+    raw = typer.prompt(f"Select ({hint})", default="1")
+
+    selected = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            idx = int(part) - 1
+            if 0 <= idx < len(choices):
+                selected.append(choices[idx])
+    return selected or [choices[0]]
+
+
+@app.command()
+def soul():
+    """Interactively configure your agent's personality, your profile, and behavior."""
+    from nanobot.config.loader import load_config
+    from nanobot.utils.helpers import get_workspace_path
+
+    config = load_config()
+    workspace = get_workspace_path(config.agents.defaults.workspace)
+
+    console.print(f"\n{__logo__} [bold]nanobot soul configurator[/bold]")
+    console.print("[dim]This will walk you through setting up your agent's personality and your profile.[/dim]")
+    console.print("[dim]Press Enter to accept defaults. Files are written at the end.[/dim]\n")
+
+    # ------------------------------------------------------------------
+    # 1. USER.md
+    # ------------------------------------------------------------------
+    console.print("[bold cyan]── Your Profile (USER.md) ──[/bold cyan]\n")
+
+    user_name = _ask("Your name", "")
+    user_timezone = _ask("Your timezone (e.g. America/New_York, UTC+8)", "")
+    user_language = _ask("Preferred language", "English")
+
+    comm_style = _choose(
+        "Communication style you prefer:",
+        ["Casual", "Professional", "Technical"],
+    )
+
+    response_len = _choose(
+        "Preferred response length:",
+        ["Brief and concise", "Detailed explanations", "Adaptive based on question"],
+    )
+
+    tech_level = _choose(
+        "Your technical level:",
+        ["Beginner", "Intermediate", "Expert"],
+    )
+
+    user_role = _ask("Your primary role (e.g. developer, researcher, student)", "")
+    user_projects = _ask("Main projects or topics you work on", "")
+    user_tools = _ask("Tools you use (languages, frameworks, IDEs)", "")
+    user_special = _ask("Any special instructions for the assistant", "")
+
+    # ------------------------------------------------------------------
+    # 2. SOUL.md
+    # ------------------------------------------------------------------
+    console.print("\n[bold cyan]── Agent Personality (SOUL.md) ──[/bold cyan]\n")
+
+    agent_name = _ask("Agent name", "nanobot")
+
+    personality_traits = _choose(
+        "Pick personality traits (comma-separate for multiple):",
+        ["Helpful and friendly", "Concise and direct", "Curious and creative",
+         "Formal and precise"],
+        allow_multi=True,
+    )
+
+    values = _choose(
+        "Pick core values (comma-separate for multiple):",
+        ["Accuracy over speed", "User privacy and safety",
+         "Transparency in actions", "Creativity and exploration"],
+        allow_multi=True,
+    )
+
+    tone = _choose(
+        "Conversational tone:",
+        ["Warm and encouraging", "Neutral and matter-of-fact",
+         "Witty and playful", "Professional and reserved"],
+    )
+
+    soul_extra = _ask("Anything else about the agent's personality", "")
+
+    # ------------------------------------------------------------------
+    # 3. AGENTS.md (behavior guidelines)
+    # ------------------------------------------------------------------
+    console.print("\n[bold cyan]── Agent Behavior (AGENTS.md) ──[/bold cyan]\n")
+
+    explain_before = typer.confirm("Should the agent explain what it's doing before taking actions?", default=True)
+    ask_clarify = typer.confirm("Should the agent ask for clarification on ambiguous requests?", default=True)
+    use_memory = typer.confirm("Should the agent remember important facts across sessions?", default=True)
+    agents_extra = _ask("Any additional behavior guidelines", "")
+
+    # ------------------------------------------------------------------
+    # 4. HEARTBEAT.md
+    # ------------------------------------------------------------------
+    console.print("\n[bold cyan]── Periodic Tasks (HEARTBEAT.md) ──[/bold cyan]\n")
+    console.print("[dim]These tasks run every 30 minutes when the gateway is active.[/dim]")
+
+    heartbeat_tasks: list[str] = []
+    if typer.confirm("Add periodic tasks?", default=False):
+        console.print("[dim]Enter tasks one per line. Empty line to finish.[/dim]")
+        while True:
+            task = _ask("Task (empty to finish)", "")
+            if not task:
+                break
+            heartbeat_tasks.append(task)
+
+    # ------------------------------------------------------------------
+    # Build and write files
+    # ------------------------------------------------------------------
+    console.print("\n[bold cyan]── Writing files ──[/bold cyan]\n")
+
+    # --- USER.md ---
+    user_lines = ["# User Profile\n"]
+    user_lines.append("## Basic Information\n")
+    if user_name:
+        user_lines.append(f"- **Name**: {user_name}")
+    if user_timezone:
+        user_lines.append(f"- **Timezone**: {user_timezone}")
+    user_lines.append(f"- **Language**: {user_language}")
+
+    user_lines.append("\n## Preferences\n")
+    user_lines.append(f"- **Communication style**: {comm_style[0]}")
+    user_lines.append(f"- **Response length**: {response_len[0]}")
+    user_lines.append(f"- **Technical level**: {tech_level[0]}")
+
+    if user_role or user_projects or user_tools:
+        user_lines.append("\n## Work Context\n")
+        if user_role:
+            user_lines.append(f"- **Primary Role**: {user_role}")
+        if user_projects:
+            user_lines.append(f"- **Main Projects**: {user_projects}")
+        if user_tools:
+            user_lines.append(f"- **Tools**: {user_tools}")
+
+    if user_special:
+        user_lines.append(f"\n## Special Instructions\n\n{user_special}")
+
+    user_md = "\n".join(user_lines) + "\n"
+
+    # --- SOUL.md ---
+    soul_lines = [f"# Soul\n\nI am {agent_name}, a personal AI assistant.\n"]
+    soul_lines.append("## Personality\n")
+    for trait in personality_traits:
+        soul_lines.append(f"- {trait}")
+    soul_lines.append("\n## Values\n")
+    for v in values:
+        soul_lines.append(f"- {v}")
+    soul_lines.append(f"\n## Tone\n\n- {tone[0]}")
+    if soul_extra:
+        soul_lines.append(f"\n## Notes\n\n{soul_extra}")
+    soul_md = "\n".join(soul_lines) + "\n"
+
+    # --- AGENTS.md ---
+    agent_lines = ["# Agent Instructions\n"]
+    agent_lines.append(f"You are {agent_name}, a personal AI assistant. Be helpful and accurate.\n")
+    agent_lines.append("## Guidelines\n")
+    if explain_before:
+        agent_lines.append("- Always explain what you're doing before taking actions")
+    if ask_clarify:
+        agent_lines.append("- Ask for clarification when the request is ambiguous")
+    agent_lines.append("- Use tools to help accomplish tasks")
+    if use_memory:
+        agent_lines.append("- Remember important information in memory/MEMORY.md; past events are logged in memory/HISTORY.md")
+    if agents_extra:
+        agent_lines.append(f"- {agents_extra}")
+    agents_md = "\n".join(agent_lines) + "\n"
+
+    # --- HEARTBEAT.md ---
+    hb_lines = ["# Heartbeat Tasks\n"]
+    hb_lines.append("Checked every 30 minutes when the gateway is active.\n")
+    if heartbeat_tasks:
+        hb_lines.append("## Active Tasks\n")
+        for t in heartbeat_tasks:
+            hb_lines.append(f"- [ ] {t}")
+    heartbeat_md = "\n".join(hb_lines) + "\n"
+
+    # Write all files
+    files = {
+        "USER.md": user_md,
+        "SOUL.md": soul_md,
+        "AGENTS.md": agents_md,
+        "HEARTBEAT.md": heartbeat_md,
+    }
+
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "memory").mkdir(exist_ok=True)
+
+    for filename, content in files.items():
+        path = workspace / filename
+        existed = path.exists()
+        if existed:
+            if not typer.confirm(f"  {filename} already exists. Overwrite?", default=True):
+                console.print(f"  [yellow]Skipped[/yellow] {filename}")
+                continue
+        path.write_text(content)
+        verb = "Updated" if existed else "Created"
+        console.print(f"  [green]✓[/green] {verb} {filename}")
+
+    # Ensure memory files exist
+    mem = workspace / "memory" / "MEMORY.md"
+    if not mem.exists():
+        mem.write_text("# Long-term Memory\n\nImportant facts that persist across sessions.\n")
+        console.print("  [green]✓[/green] Created memory/MEMORY.md")
+    hist = workspace / "memory" / "HISTORY.md"
+    if not hist.exists():
+        hist.write_text("")
+        console.print("  [green]✓[/green] Created memory/HISTORY.md")
+
+    console.print(f"\n{__logo__} [bold green]Soul configured![/bold green]")
+    console.print(f"[dim]Files live in {workspace}. Edit them anytime to fine-tune.[/dim]\n")
+
+
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
     from nanobot.providers.litellm_provider import LiteLLMProvider
