@@ -198,6 +198,14 @@ def onboard():
 
 
 
+@app.command()
+def configure():
+    """Interactive wizard to configure nanobot's soul, behavior, and model settings."""
+    from nanobot.cli.configure import run_configure_wizard
+
+    run_configure_wizard()
+
+
 def _create_workspace_templates(workspace: Path):
     """Create default workspace template files."""
     templates = {
