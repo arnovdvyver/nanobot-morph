@@ -249,6 +249,24 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         model_overrides=(),
     ),
 
+    # xAI: Grok models, needs "xai/" prefix for LiteLLM routing.
+    ProviderSpec(
+        name="xai",
+        keywords=("xai", "grok"),
+        env_key="XAI_API_KEY",
+        display_name="xAI",
+        litellm_prefix="xai",              # grok-3 → xai/grok-3
+        skip_prefixes=("xai/",),           # avoid double-prefix
+        env_extras=(),
+        is_gateway=False,
+        is_local=False,
+        detect_by_key_prefix="",
+        detect_by_base_keyword="",
+        default_api_base="",
+        strip_model_prefix=False,
+        model_overrides=(),
+    ),
+
     # Zhipu: LiteLLM uses "zai/" prefix.
     # Also mirrors key to ZHIPUAI_API_KEY (some LiteLLM paths check that).
     # skip_prefixes: don't add "zai/" when already routed via gateway.
